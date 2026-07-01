@@ -104,3 +104,14 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+# Project Ocean repository boundary
+# Keep the Unity project source/config and a few repo management files at the root.
+/*
+!/.gitignore
+!/.gitattributes
+!/AGENTS.md
+!/README.md
+!/Assets/
+!/Packages/
+!/ProjectSettings/
+
