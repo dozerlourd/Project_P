@@ -13,6 +13,7 @@ public sealed class WobblePlayerController : MonoBehaviour
     public Transform cameraTransform;
     public Transform head;
 
+    [Header("Body")]
     public Vector3 leftShoulderLocal = new Vector3(-0.42f, 0.58f, 0.08f);
     public Vector3 rightShoulderLocal = new Vector3(0.42f, 0.58f, 0.08f);
     public float moveForce = 38f;
@@ -26,15 +27,34 @@ public sealed class WobblePlayerController : MonoBehaviour
     public float cameraHeight = 1.05f;
     public float mouseSensitivity = 0.12f;
     public float handReach = 2.35f;
-    public float climbAssist = 40f;
-    public float hangClimbRiseSpeed = 1.55f;
+
+    [Header("Hang Swing")]
     public float hangSwingPumpForce = 18f;
-    public float hangSwingLiftForce = 15f;
+    public float hangSwingStartForceScale = 0.15f;
+    public float hangSwingInputBuildRate = 0.8f;
+    public float hangSwingOpposeBrake = 12f;
+    public float pendulumGravityScale = 1.15f;
+    public float pendulumMinInputAngle = 5f;
+    public float pendulumFullInputAngle = 22f;
     public float hangSwingEnergyGain = 1.45f;
     public float hangSwingPhysicalEnergyGain = 0.32f;
     public float hangSwingMinPhysicalSpeed = 0.35f;
     public float hangSwingEnergyDecay = 0.65f;
     public float hangSwingMaxEnergy = 1.8f;
+    public float hangMaxUpwardSpeed = 3.2f;
+
+    [Header("Grip Auto Release")]
+    public float maxGripDuration = 4f;
+    public float autoReleaseTension = 16f;
+    public float autoReleaseTangentSpeed = 8.5f;
+
+    [Header("Swing Launch")]
+    public bool preserveReleaseVelocity = true;
+    public float releaseImpulse = 2.5f;
+    public float maxReleaseImpulse = 6f;
+    public float minLaunchSpeedForImpulse = 2f;
+
+    [Header("Grounding")]
     public float groundProbeRadius = 0.28f;
     public float groundProbeDistance = 1.15f;
     public float groundNormalMinY = 0.62f;
@@ -51,10 +71,19 @@ public sealed class WobblePlayerController : MonoBehaviour
     private float yaw;
     private float pitch;
     private bool jumpQueued;
-    private bool jumpHeld;
     private bool leftGrabHeld;
     private bool rightGrabHeld;
     private float hangSwingEnergy;
+    private float leftGripStartTime = -1f;
+    private float rightGripStartTime = -1f;
+    private bool leftWasActiveGrip;
+    private bool rightWasActiveGrip;
+    private bool leftAutoReleaseBlocked;
+    private bool rightAutoReleaseBlocked;
+    private Vector3 lastSwingDirection;
+    private Vector3 lastGripPoint;
+    private bool hasLastSwingDirection;
+    private bool hasLastGripPoint;
 
     private void Awake()
     {
@@ -99,9 +128,22 @@ public sealed class WobblePlayerController : MonoBehaviour
         ReadLookInput();
         moveInput = ReadMoveInput();
         jumpQueued = jumpQueued || WasJumpPressed();
-        jumpHeld = IsJumpHeld();
-        leftGrabHeld = IsLeftGrabHeld();
-        rightGrabHeld = IsRightGrabHeld();
+        bool rawLeftGrabHeld = IsLeftGrabHeld();
+        bool rawRightGrabHeld = IsRightGrabHeld();
+        if (!rawLeftGrabHeld)
+        {
+            leftAutoReleaseBlocked = false;
+        }
+
+        if (!rawRightGrabHeld)
+        {
+            rightAutoReleaseBlocked = false;
+        }
+
+        leftGrabHeld = rawLeftGrabHeld && !leftAutoReleaseBlocked;
+        rightGrabHeld = rawRightGrabHeld && !rightAutoReleaseBlocked;
+
+        HandleManualGripReleases();
 
         if (WasRespawnPressed())
         {
@@ -133,22 +175,18 @@ public sealed class WobblePlayerController : MonoBehaviour
     {
         bool grounded = IsGrounded();
         bool hasGrip = HasAnyGrip();
+        bool hasStaticGrip = HasAnyStaticGrip();
         if (ShouldSuppressWallGrounding(grounded, hasGrip))
         {
             grounded = false;
         }
 
+        TrackGripState(IsActiveGrip(leftHand, leftGrabHeld), IsActiveGrip(rightHand, rightGrabHeld));
         ApplyMovement(grounded, hasGrip);
-        ApplyHangSwing(grounded, hasGrip);
-        ApplyHangClimb(grounded, hasGrip, jumpHeld);
+        ApplyHangSwing(grounded, hasGrip, hasStaticGrip);
+        ApplyGripAutoRelease();
         ApplyUprightTorque();
         UpdateHandTargets();
-
-        if (hasGrip && moveInput.y > 0.05f)
-        {
-            // Holding forward while grabbed helps pull the body forward; climbing upward is a Space action.
-            body.AddForce(CameraForwardPlanar() * (climbAssist * 0.23f), ForceMode.Acceleration);
-        }
 
         jumpQueued = false;
     }
@@ -177,6 +215,14 @@ public sealed class WobblePlayerController : MonoBehaviour
         }
 
         hangSwingEnergy = 0f;
+        leftGripStartTime = -1f;
+        rightGripStartTime = -1f;
+        leftWasActiveGrip = false;
+        rightWasActiveGrip = false;
+        leftAutoReleaseBlocked = false;
+        rightAutoReleaseBlocked = false;
+        hasLastSwingDirection = false;
+        hasLastGripPoint = false;
         GameHud.ShowMessage("Respawned.", 1.6f);
     }
 
@@ -233,6 +279,10 @@ public sealed class WobblePlayerController : MonoBehaviour
     private void ApplyMovement(bool grounded, bool hasGrip)
     {
         Vector3 desired = CameraForwardPlanar() * moveInput.y + CameraRightPlanar() * moveInput.x;
+        if (!grounded && !hasGrip)
+        {
+            desired = RemoveAirborneWallPress(desired);
+        }
 
         Vector3 horizontalVelocity = Vector3.ProjectOnPlane(body.linearVelocity, Vector3.up);
         if (desired.sqrMagnitude > 0.001f && horizontalVelocity.magnitude < maxPlanarSpeed)
@@ -260,30 +310,7 @@ public sealed class WobblePlayerController : MonoBehaviour
         }
     }
 
-    private void ApplyHangClimb(bool grounded, bool hasGrip, bool climbHeld)
-    {
-        if (grounded || !hasGrip || !TryGetGripPoint(out Vector3 gripPoint))
-        {
-            return;
-        }
-
-        if (!climbHeld)
-        {
-            return;
-        }
-
-        Vector3 velocity = body.linearVelocity;
-        float climbAcceleration = Mathf.Clamp((hangClimbRiseSpeed - velocity.y) * 8f - Physics.gravity.y, 0f, climbAssist);
-        body.AddForce(Vector3.up * climbAcceleration, ForceMode.Acceleration);
-
-        Vector3 toGripPlanar = Vector3.ProjectOnPlane(gripPoint - body.position, Vector3.up);
-        if (toGripPlanar.sqrMagnitude > 0.01f)
-        {
-            body.AddForce(toGripPlanar.normalized * (climbAssist * 0.18f), ForceMode.Acceleration);
-        }
-    }
-
-    private void ApplyHangSwing(bool grounded, bool hasGrip)
+    private void ApplyHangSwing(bool grounded, bool hasGrip, bool hasStaticGrip)
     {
         if (grounded || !hasGrip || !TryGetGripPoint(out Vector3 gripPoint))
         {
@@ -291,40 +318,90 @@ public sealed class WobblePlayerController : MonoBehaviour
             return;
         }
 
-        Vector3 toBody = body.position - gripPoint;
-        Vector3 swingAxis = Vector3.Cross(Vector3.up, toBody);
-        if (swingAxis.sqrMagnitude < 0.01f)
+        Vector3 radial = body.position - gripPoint;
+        if (radial.sqrMagnitude < 0.01f)
         {
-            swingAxis = CameraRightPlanar();
-        }
-        else
-        {
-            swingAxis.Normalize();
+            hangSwingEnergy = Mathf.MoveTowards(hangSwingEnergy, 0f, hangSwingEnergyDecay * Time.fixedDeltaTime);
+            return;
         }
 
-        if (Vector3.Dot(swingAxis, CameraRightPlanar()) < 0f)
+        radial.Normalize();
+        lastGripPoint = gripPoint;
+        hasLastGripPoint = true;
+
+        Vector3 pendulumGravity = Vector3.ProjectOnPlane(Physics.gravity, radial);
+        if (pendulumGravity.sqrMagnitude > 0.001f)
         {
-            swingAxis = -swingAxis;
+            body.AddForce(pendulumGravity * pendulumGravityScale, ForceMode.Acceleration);
         }
 
-        Vector3 lateralVelocity = Vector3.Project(body.linearVelocity, swingAxis);
-        float lateralSpeed = Mathf.Abs(Vector3.Dot(lateralVelocity, swingAxis));
-        float sideInput = moveInput.x;
+        Vector3 tangentVelocity = Vector3.ProjectOnPlane(body.linearVelocity, radial);
+        float tangentSpeed = tangentVelocity.magnitude;
+        if (tangentVelocity.sqrMagnitude > 0.04f)
+        {
+            lastSwingDirection = tangentVelocity.normalized;
+            hasLastSwingDirection = true;
+        }
+
+        Vector3 swingInput = CameraScreenSwingDirection(radial);
+        float inputStrength = Mathf.Clamp01(moveInput.magnitude);
+        float angleFromDown = Vector3.Angle(radial, Vector3.down);
+        float angleScale = Mathf.InverseLerp(pendulumMinInputAngle, pendulumFullInputAngle, angleFromDown);
         float energyDelta = 0f;
 
-        if (lateralSpeed > hangSwingMinPhysicalSpeed)
+        if (inputStrength >= 0.05f && swingInput.sqrMagnitude > 0.001f)
         {
-            energyDelta += (lateralSpeed - hangSwingMinPhysicalSpeed) * hangSwingPhysicalEnergyGain;
-        }
+            Vector3 swingDirection = swingInput.normalized;
+            if (!hasStaticGrip)
+            {
+                swingDirection = Vector3.ProjectOnPlane(swingDirection, Vector3.up);
+                if (swingDirection.sqrMagnitude < 0.001f)
+                {
+                    hangSwingEnergy = Mathf.MoveTowards(hangSwingEnergy, 0f, hangSwingEnergyDecay * Time.fixedDeltaTime);
+                    return;
+                }
 
-        if (Mathf.Abs(sideInput) >= 0.05f)
-        {
-            Vector3 swingDirection = swingAxis * Mathf.Sign(sideInput);
-            float timedPump = Mathf.Max(0.15f, Vector3.Dot(lateralVelocity, swingDirection));
-            energyDelta += timedPump * hangSwingEnergyGain;
+                swingDirection.Normalize();
+            }
 
-            float pumpForce = hangSwingPumpForce * (1f + hangSwingEnergy);
+            if (body.linearVelocity.y >= hangMaxUpwardSpeed && swingDirection.y > 0f)
+            {
+                swingDirection = Vector3.ProjectOnPlane(swingDirection, Vector3.up);
+                if (swingDirection.sqrMagnitude < 0.001f)
+                {
+                    hangSwingEnergy = Mathf.MoveTowards(hangSwingEnergy, 0f, hangSwingEnergyDecay * Time.fixedDeltaTime);
+                    return;
+                }
+
+                swingDirection.Normalize();
+            }
+
+            bool hasMeaningfulSwing = tangentSpeed > hangSwingMinPhysicalSpeed;
+            float alignment = hasMeaningfulSwing ? Vector3.Dot(tangentVelocity.normalized, swingDirection) : 0f;
+            if (hasMeaningfulSwing && alignment < -0.05f)
+            {
+                float brake = hangSwingOpposeBrake * inputStrength * -alignment;
+                body.AddForce(-tangentVelocity.normalized * brake, ForceMode.Acceleration);
+                energyDelta -= brake * 0.18f;
+            }
+            else
+            {
+                float timedPump = hasMeaningfulSwing ? Mathf.Max(0f, alignment) * tangentSpeed : 0.2f;
+                float starterScale = Mathf.Lerp(0.35f, 1f, angleScale);
+                energyDelta += hangSwingInputBuildRate * inputStrength * starterScale;
+                energyDelta += timedPump * hangSwingEnergyGain;
+                if (hasMeaningfulSwing && alignment > 0f)
+                {
+                    energyDelta += (tangentSpeed - hangSwingMinPhysicalSpeed) * hangSwingPhysicalEnergyGain * alignment;
+                }
+            }
+
+            float energyRatio = hangSwingMaxEnergy > 0f ? Mathf.Clamp01(hangSwingEnergy / hangSwingMaxEnergy) : 1f;
+            float forceScale = Mathf.Lerp(hangSwingStartForceScale, 1f, energyRatio) * Mathf.Lerp(0.35f, 1f, angleScale);
+            float pumpForce = hangSwingPumpForce * inputStrength * forceScale;
             body.AddForce(swingDirection * pumpForce, ForceMode.Acceleration);
+            lastSwingDirection = swingDirection;
+            hasLastSwingDirection = true;
         }
 
         if (energyDelta > 0f)
@@ -334,30 +411,274 @@ public sealed class WobblePlayerController : MonoBehaviour
                 0f,
                 hangSwingMaxEnergy);
         }
+        else if (energyDelta < 0f)
+        {
+            hangSwingEnergy = Mathf.MoveTowards(hangSwingEnergy, 0f, -energyDelta * Time.fixedDeltaTime);
+        }
         else
         {
             hangSwingEnergy = Mathf.MoveTowards(hangSwingEnergy, 0f, hangSwingEnergyDecay * Time.fixedDeltaTime);
         }
+    }
 
-        if (hangSwingEnergy <= 0f)
+    private void HandleManualGripReleases()
+    {
+        bool releaseLeft = leftWasActiveGrip && !leftGrabHeld && leftHand != null && leftHand.IsGrabbed;
+        bool releaseRight = rightWasActiveGrip && !rightGrabHeld && rightHand != null && rightHand.IsGrabbed;
+        if (!releaseLeft && !releaseRight)
         {
             return;
         }
 
-        float liftInputScale = Mathf.Max(Mathf.Abs(sideInput), Mathf.InverseLerp(hangSwingMinPhysicalSpeed, hangSwingMinPhysicalSpeed * 3f, lateralSpeed));
-        float liftForce = hangSwingLiftForce * hangSwingEnergy * liftInputScale;
-        body.AddForce(Vector3.up * liftForce, ForceMode.Acceleration);
+        bool leftRemains = leftWasActiveGrip && !releaseLeft;
+        bool rightRemains = rightWasActiveGrip && !releaseRight;
+        if (!leftRemains && !rightRemains)
+        {
+            ApplyReleaseImpulse();
+        }
+
+        if (releaseLeft)
+        {
+            leftHand.ForceReleaseGrip();
+            leftGripStartTime = -1f;
+            leftWasActiveGrip = false;
+        }
+
+        if (releaseRight)
+        {
+            rightHand.ForceReleaseGrip();
+            rightGripStartTime = -1f;
+            rightWasActiveGrip = false;
+        }
+    }
+
+    private void TrackGripState(bool leftActive, bool rightActive)
+    {
+        bool hadAnyGrip = leftWasActiveGrip || rightWasActiveGrip;
+        if (!hadAnyGrip && (leftActive || rightActive))
+        {
+            hangSwingEnergy = 0f;
+            hasLastSwingDirection = false;
+            hasLastGripPoint = false;
+        }
+
+        if (leftActive && !leftWasActiveGrip)
+        {
+            leftGripStartTime = Time.time;
+        }
+        else if (!leftActive)
+        {
+            leftGripStartTime = -1f;
+        }
+
+        if (rightActive && !rightWasActiveGrip)
+        {
+            rightGripStartTime = Time.time;
+        }
+        else if (!rightActive)
+        {
+            rightGripStartTime = -1f;
+        }
+
+        leftWasActiveGrip = leftActive;
+        rightWasActiveGrip = rightActive;
+    }
+
+    private void ApplyGripAutoRelease()
+    {
+        bool leftActive = IsActiveGrip(leftHand, leftGrabHeld);
+        bool rightActive = IsActiveGrip(rightHand, rightGrabHeld);
+        if (!leftActive && !rightActive)
+        {
+            return;
+        }
+
+        bool releaseLeft = leftActive && ShouldAutoReleaseHand(leftHand, leftGripStartTime);
+        bool releaseRight = rightActive && ShouldAutoReleaseHand(rightHand, rightGripStartTime);
+
+        if (leftActive && rightActive && TryGetGripPoint(out Vector3 gripPoint))
+        {
+            float sharedTangentSpeed = TangentSpeedFromGripPoint(gripPoint);
+            if (sharedTangentSpeed >= autoReleaseTangentSpeed)
+            {
+                releaseLeft = true;
+                releaseRight = true;
+            }
+        }
+
+        if (!releaseLeft && !releaseRight)
+        {
+            return;
+        }
+
+        bool releasesAllGrips = (!leftActive || releaseLeft) && (!rightActive || releaseRight);
+        if (releasesAllGrips)
+        {
+            ApplyReleaseImpulse();
+        }
+
+        if (releaseLeft)
+        {
+            leftHand.ForceReleaseGrip();
+            leftHand.SetGrabHeld(false);
+            leftGripStartTime = -1f;
+            leftWasActiveGrip = false;
+            leftAutoReleaseBlocked = true;
+        }
+
+        if (releaseRight)
+        {
+            rightHand.ForceReleaseGrip();
+            rightHand.SetGrabHeld(false);
+            rightGripStartTime = -1f;
+            rightWasActiveGrip = false;
+            rightAutoReleaseBlocked = true;
+        }
+
+        if (releasesAllGrips)
+        {
+            hangSwingEnergy = 0f;
+        }
+    }
+
+    private bool ShouldAutoReleaseHand(WobbleHand hand, float gripStartTime)
+    {
+        if (hand == null || !hand.IsGrabbed)
+        {
+            return false;
+        }
+
+        if (maxGripDuration > 0f && gripStartTime >= 0f && Time.time - gripStartTime >= maxGripDuration)
+        {
+            return true;
+        }
+
+        if (TangentSpeedFromGripPoint(hand.transform.position) >= autoReleaseTangentSpeed)
+        {
+            return true;
+        }
+
+        return EstimateGripTension(hand) >= autoReleaseTension;
+    }
+
+    private float TangentSpeedFromGripPoint(Vector3 gripPoint)
+    {
+        Vector3 radial = body.position - gripPoint;
+        if (radial.sqrMagnitude < 0.01f)
+        {
+            return 0f;
+        }
+
+        return Vector3.ProjectOnPlane(body.linearVelocity, radial.normalized).magnitude;
+    }
+
+    private float EstimateGripTension(WobbleHand hand)
+    {
+        Vector3 radial = body.position - hand.transform.position;
+        if (radial.sqrMagnitude < 0.01f)
+        {
+            return 0f;
+        }
+
+        Vector3 radialDirection = radial.normalized;
+        float outwardSpeed = Mathf.Max(0f, Vector3.Dot(body.linearVelocity, radialDirection));
+        float stretch = Mathf.Max(0f, radial.magnitude - handReach * 0.65f);
+        return stretch * 4f + outwardSpeed * 2f + hangSwingEnergy * 2f;
+    }
+
+    private void ApplyReleaseImpulse()
+    {
+        if (releaseImpulse <= 0f || maxReleaseImpulse <= 0f)
+        {
+            return;
+        }
+
+        if (!TryGetReleaseDirection(out Vector3 direction))
+        {
+            return;
+        }
+
+        if (!preserveReleaseVelocity)
+        {
+            body.linearVelocity = Vector3.zero;
+        }
+
+        float currentSpeed = Mathf.Max(0f, Vector3.Dot(body.linearVelocity, direction));
+        float lowSpeedBoost = Mathf.Max(0f, minLaunchSpeedForImpulse - currentSpeed);
+        float impulseMagnitude = Mathf.Clamp(releaseImpulse + lowSpeedBoost + hangSwingEnergy, 0f, maxReleaseImpulse);
+        body.AddForce(direction * impulseMagnitude, ForceMode.VelocityChange);
+    }
+
+    private bool TryGetReleaseDirection(out Vector3 direction)
+    {
+        direction = Vector3.zero;
+
+        if (hasLastGripPoint)
+        {
+            Vector3 radial = body.position - lastGripPoint;
+            if (radial.sqrMagnitude > 0.01f)
+            {
+                Vector3 tangentVelocity = Vector3.ProjectOnPlane(body.linearVelocity, radial.normalized);
+                if (tangentVelocity.sqrMagnitude > 0.04f)
+                {
+                    direction = tangentVelocity.normalized;
+                    return true;
+                }
+            }
+        }
+
+        if (hasLastSwingDirection && lastSwingDirection.sqrMagnitude > 0.001f)
+        {
+            direction = lastSwingDirection.normalized;
+            return true;
+        }
+
+        Vector3 fallback = CameraForwardPlanar();
+        if (fallback.sqrMagnitude > 0.001f)
+        {
+            direction = fallback.normalized;
+            return true;
+        }
+
+        return false;
+    }
+
+    private Vector3 CameraScreenSwingDirection(Vector3 radial)
+    {
+        Vector3 screenRight = cameraTransform != null ? cameraTransform.right : transform.right;
+        Vector3 screenUp = cameraTransform != null ? cameraTransform.up : Vector3.up;
+        Vector3 desired = screenRight * moveInput.x + screenUp * moveInput.y;
+        desired = Vector3.ProjectOnPlane(desired, radial);
+        return desired.sqrMagnitude > 0.001f ? desired.normalized : Vector3.zero;
     }
 
     private bool IsPressingIntoWall(Vector3 moveDirection)
     {
-        return IsPressingIntoWallFrom(body.position + Vector3.up * 0.45f, moveDirection)
-            || IsPressingIntoWallFrom(body.position, moveDirection)
-            || IsPressingIntoWallFrom(body.position + Vector3.down * 0.45f, moveDirection);
+        return TryGetWallPressNormal(moveDirection, out _);
     }
 
-    private bool IsPressingIntoWallFrom(Vector3 origin, Vector3 moveDirection)
+    private Vector3 RemoveAirborneWallPress(Vector3 desired)
     {
+        if (desired.sqrMagnitude < 0.001f || !TryGetWallPressNormal(desired.normalized, out Vector3 wallNormal))
+        {
+            return desired;
+        }
+
+        Vector3 adjusted = Vector3.ProjectOnPlane(desired, wallNormal);
+        adjusted = Vector3.ProjectOnPlane(adjusted, Vector3.up);
+        return adjusted.sqrMagnitude > 0.001f ? adjusted : Vector3.zero;
+    }
+
+    private bool TryGetWallPressNormal(Vector3 moveDirection, out Vector3 wallNormal)
+    {
+        return TryGetWallPressNormalFrom(body.position + Vector3.up * 0.45f, moveDirection, out wallNormal)
+            || TryGetWallPressNormalFrom(body.position, moveDirection, out wallNormal)
+            || TryGetWallPressNormalFrom(body.position + Vector3.down * 0.45f, moveDirection, out wallNormal);
+    }
+
+    private bool TryGetWallPressNormalFrom(Vector3 origin, Vector3 moveDirection, out Vector3 wallNormal)
+    {
+        wallNormal = Vector3.zero;
         RaycastHit[] hits = Physics.SphereCastAll(
             origin,
             wallSlideProbeRadius,
@@ -389,6 +710,12 @@ public sealed class WobblePlayerController : MonoBehaviour
                 continue;
             }
 
+            if (Vector3.Dot(moveDirection, hit.normal) >= -0.05f)
+            {
+                continue;
+            }
+
+            wallNormal = hit.normal;
             return true;
         }
 
@@ -397,7 +724,7 @@ public sealed class WobblePlayerController : MonoBehaviour
 
     private bool ShouldSuppressWallGrounding(bool grounded, bool hasGrip)
     {
-        if (!grounded || hasGrip || moveInput.y <= 0.05f)
+        if (!grounded || hasGrip)
         {
             return false;
         }
@@ -439,6 +766,11 @@ public sealed class WobblePlayerController : MonoBehaviour
         return IsActiveGrip(leftHand, leftGrabHeld) || IsActiveGrip(rightHand, rightGrabHeld);
     }
 
+    private bool HasAnyStaticGrip()
+    {
+        return IsActiveStaticGrip(leftHand, leftGrabHeld) || IsActiveStaticGrip(rightHand, rightGrabHeld);
+    }
+
     private bool TryGetGripPoint(out Vector3 gripPoint)
     {
         gripPoint = Vector3.zero;
@@ -468,6 +800,11 @@ public sealed class WobblePlayerController : MonoBehaviour
     private static bool IsActiveGrip(WobbleHand hand, bool grabInputHeld)
     {
         return grabInputHeld && hand != null && hand.GrabHeld && hand.IsGrabbed;
+    }
+
+    private static bool IsActiveStaticGrip(WobbleHand hand, bool grabInputHeld)
+    {
+        return IsActiveGrip(hand, grabInputHeld) && hand.HasStaticGrip;
     }
 
     private void ApplyUprightTorque()
@@ -697,22 +1034,6 @@ public sealed class WobblePlayerController : MonoBehaviour
 
 #if ENABLE_LEGACY_INPUT_MANAGER
         return Input.GetKeyDown(KeyCode.Space);
-#else
-        return false;
-#endif
-    }
-
-    private bool IsJumpHeld()
-    {
-#if ENABLE_INPUT_SYSTEM
-        if (Keyboard.current != null && Keyboard.current.spaceKey.isPressed)
-        {
-            return true;
-        }
-#endif
-
-#if ENABLE_LEGACY_INPUT_MANAGER
-        return Input.GetKey(KeyCode.Space);
 #else
         return false;
 #endif

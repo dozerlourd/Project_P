@@ -12,6 +12,11 @@ public static class DriftlingRuntimeBootstrap
             return;
         }
 
+        if (Object.FindAnyObjectByType<SampleScenePlayerSpawner>() != null)
+        {
+            return;
+        }
+
         Material white = RuntimeMaterial("Runtime_Driftling_White", new Color(0.93f, 0.95f, 0.96f), 0.34f);
         Material glove = RuntimeMaterial("Runtime_Driftling_Glove", new Color(0.13f, 0.23f, 0.32f), 0.26f);
         Material floor = RuntimeMaterial("Runtime_Workshop_Floor", new Color(0.78f, 0.82f, 0.76f), 0.2f);

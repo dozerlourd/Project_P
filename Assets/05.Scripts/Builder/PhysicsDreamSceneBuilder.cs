@@ -5,17 +5,18 @@ using UnityEngine.SceneManagement;
 
 public static class PhysicsDreamSceneBuilder
 {
-    private const string ScenePath = "Assets/Scenes/WobbleWorkshop.unity";
-    private const string ClimbGauntletScenePath = "Assets/Scenes/WobbleClimbGauntlet.unity";
+    private const string ScenePath = "Assets/06.Scenes/SampleScene.unity";
+    private const string ClimbGauntletScenePath = "Assets/06.Scenes/WobbleClimbGauntlet.unity";
+    private const string MaterialsFolder = "Assets/02.Materials";
+    private const string PlayerPrefabPath = "Assets/04.Prefab/Player Character.prefab";
     private const string MapLayerName = "WobbleMap";
 
-    [MenuItem("Tools/Driftling Workshop/Rebuild Prototype Scene")]
+    [MenuItem("Tools/Driftling Workshop/Rebuild Sample Scene Mega Map")]
     public static void BuildScene()
     {
-        EnsureFolder("Assets", "Materials");
-        EnsureFolder("Assets", "Scenes");
+        EnsureFolder("Assets", "02.Materials");
+        EnsureFolder("Assets", "06.Scenes");
 
-        Material white = MaterialAsset("Driftling_White", new Color(0.93f, 0.95f, 0.96f), 0.34f);
         Material glove = MaterialAsset("Driftling_Glove", new Color(0.13f, 0.23f, 0.32f), 0.26f);
         Material floor = MaterialAsset("Workshop_Floor", new Color(0.78f, 0.82f, 0.76f), 0.2f);
         Material edge = MaterialAsset("Workshop_Edge", new Color(0.26f, 0.34f, 0.38f), 0.15f);
@@ -25,6 +26,8 @@ public static class PhysicsDreamSceneBuilder
         Material danger = MaterialAsset("Workshop_DangerCoral", new Color(0.95f, 0.34f, 0.28f), 0.2f);
         Material beam = MaterialAsset("Workshop_Beam", new Color(0.72f, 0.46f, 0.25f), 0.18f);
         Material glass = MaterialAsset("Workshop_Glass", new Color(0.55f, 0.78f, 0.9f, 0.55f), 0.75f);
+        Material climb = MaterialAsset("Workshop_ClimbTeal", new Color(0.15f, 0.68f, 0.63f), 0.22f);
+        Material violet = MaterialAsset("Workshop_VioletPad", new Color(0.56f, 0.43f, 0.92f), 0.28f);
 
         Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
@@ -32,14 +35,12 @@ public static class PhysicsDreamSceneBuilder
         RenderSettings.ambientEquatorColor = new Color(0.62f, 0.68f, 0.7f);
         RenderSettings.ambientGroundColor = new Color(0.37f, 0.42f, 0.38f);
 
-        GameObject world = new GameObject("Driftling Workshop");
+        GameObject world = new GameObject("Sample Scene Mega Playground");
 
         CreateLighting();
-        WobblePlayerController player = CreatePlayer(white, glove);
         Camera camera = CreateCamera();
-        player.cameraTransform = camera.transform;
-
-        BuildLevel(world.transform, floor, edge, crate, plate, goal, danger, beam, glass);
+        BuildSampleSceneMegaMap(world.transform, floor, edge, crate, plate, goal, danger, beam, glass, climb, violet);
+        CreateSampleSceneSpawner(camera, glove);
 
         GameObject hud = new GameObject("Game HUD");
         hud.AddComponent<GameHud>();
@@ -49,14 +50,14 @@ public static class PhysicsDreamSceneBuilder
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        Debug.Log("Driftling Workshop prototype scene rebuilt at " + ScenePath);
+        Debug.Log("Sample Scene mega playground rebuilt at " + ScenePath);
     }
 
     [MenuItem("Tools/Driftling Workshop/Build Climb Gauntlet Scene")]
     public static void BuildClimbGauntletScene()
     {
-        EnsureFolder("Assets", "Materials");
-        EnsureFolder("Assets", "Scenes");
+        EnsureFolder("Assets", "02.Materials");
+        EnsureFolder("Assets", "06.Scenes");
 
         Material white = MaterialAsset("Driftling_White", new Color(0.93f, 0.95f, 0.96f), 0.34f);
         Material glove = MaterialAsset("Driftling_Glove", new Color(0.13f, 0.23f, 0.32f), 0.26f);
@@ -82,8 +83,6 @@ public static class PhysicsDreamSceneBuilder
         CreateLighting();
         WobblePlayerController player = CreatePlayer(white, glove, new Vector3(0f, 2.2f, -6f));
         player.cameraDistance = 7.1f;
-        player.climbAssist = 46f;
-        player.hangClimbRiseSpeed = 1.75f;
         player.GetComponent<FallRespawn>().minY = -28f;
 
         Camera camera = CreateCamera();
@@ -162,6 +161,80 @@ public static class PhysicsDreamSceneBuilder
         AddSign("Move, jump, then grab the wall with LMB/RMB.", new Vector3(-3.3f, 1.1f, -3.2f), parent);
         AddSign("Drag the blue crate onto the plate.", new Vector3(2.6f, 1.1f, 12.2f), parent);
         AddSign("Grab high, look down, and push forward.", new Vector3(-3.7f, 1.4f, 27.2f), parent);
+    }
+
+    private static void BuildSampleSceneMegaMap(Transform parent, Material floor, Material edge, Material crate, Material plateMaterial, Material goal, Material danger, Material beamMaterial, Material glass, Material climb, Material violet)
+    {
+        Cube("Spawn Plaza", new Vector3(0f, 0f, 0f), new Vector3(22f, 1f, 18f), floor, parent, false, 0f);
+        Cube("Crate Puzzle Yard", new Vector3(0f, 0f, 24f), new Vector3(24f, 1f, 18f), floor, parent, false, 0f);
+        Cube("Moving Platform Dock", new Vector3(0f, 2.8f, 48f), new Vector3(18f, 0.6f, 12f), floor, parent, true, 0f);
+        Cube("Climb Basin", new Vector3(0f, 6.1f, 74f), new Vector3(22f, 0.65f, 16f), floor, parent, true, 0f);
+        Cube("High Traverse Deck", new Vector3(0f, 11.4f, 108f), new Vector3(18f, 0.6f, 14f), floor, parent, true, 0f);
+        Cube("Final Runway", new Vector3(0f, 16.2f, 142f), new Vector3(16f, 0.65f, 20f), floor, parent, true, 0f);
+
+        Cube("Spawn Left Rail", new Vector3(-11.2f, 0.85f, 0f), new Vector3(0.35f, 1.25f, 17f), edge, parent, true, 0f);
+        Cube("Spawn Right Rail", new Vector3(11.2f, 0.85f, 0f), new Vector3(0.35f, 1.25f, 17f), edge, parent, true, 0f);
+        Cube("Practice Grab Wall", new Vector3(7.8f, 1.7f, 5f), new Vector3(0.55f, 3.4f, 5.5f), climb, parent, true, 0f);
+        AddAlternatingLedges("Practice", 4.55f, 0.95f, 4, 1.4f, 0.72f, 1.8f, beamMaterial, parent);
+
+        GameObject firstGate = Cube("First Weight Gate", new Vector3(0f, 2.1f, 33.2f), new Vector3(7.4f, 4.2f, 0.55f), danger, parent, true, 0f);
+        GameObject firstPlate = Cube("First Pressure Plate", new Vector3(-6.8f, 0.62f, 24.2f), new Vector3(2.6f, 0.18f, 2.6f), plateMaterial, parent, false, 0f);
+        ConfigurePressurePlate(firstPlate, firstGate, firstGate.transform.position + Vector3.up * 5.2f, 2.2f);
+        Cube("Heavy Crate A", new Vector3(-2.7f, 1.15f, 19.2f), new Vector3(1.35f, 1.35f, 1.35f), crate, parent, true, 2.2f).GetComponent<Rigidbody>().linearDamping = 0.24f;
+        Cube("Heavy Crate B", new Vector3(4.8f, 1.05f, 26.6f), new Vector3(1.1f, 1.1f, 1.1f), crate, parent, true, 1.5f).GetComponent<Rigidbody>().linearDamping = 0.24f;
+        Sphere("Rolling Weight Ball", new Vector3(7.2f, 1.2f, 21.6f), new Vector3(1.2f, 1.2f, 1.2f), violet, parent, true, 1.4f).GetComponent<Rigidbody>().linearDamping = 0.12f;
+
+        GameObject seesaw = Cube("Wide Seesaw Bridge", new Vector3(0f, 3.35f, 40f), new Vector3(4f, 0.32f, 12f), beamMaterial, parent, true, 5.2f);
+        HingeJoint seesawHinge = seesaw.AddComponent<HingeJoint>();
+        seesawHinge.axis = Vector3.right;
+        seesawHinge.useLimits = true;
+        JointLimits seesawLimits = seesawHinge.limits;
+        seesawLimits.min = -16f;
+        seesawLimits.max = 16f;
+        seesawHinge.limits = seesawLimits;
+        seesaw.GetComponent<Rigidbody>().angularDamping = 0.55f;
+        Cube("Seesaw Axle", new Vector3(0f, 3f, 40f), new Vector3(5f, 0.45f, 0.5f), edge, parent, true, 0f);
+
+        CreateMovingPlatform("Long Moving Platform A", new Vector3(-6f, 3.35f, 53f), new Vector3(4.4f, 0.35f, 4.4f), new Vector3(12f, 0f, 0f), 4.6f, 0f, glass, parent);
+        CreateMovingPlatform("Long Moving Platform B", new Vector3(5.8f, 4.4f, 61f), new Vector3(4.2f, 0.35f, 4.2f), new Vector3(-11.6f, 0f, 0f), 4.9f, 1.25f, glass, parent);
+        CreateMovingPlatform("Vertical Lift Platform", new Vector3(0f, 3.2f, 67f), new Vector3(5.5f, 0.35f, 4.4f), new Vector3(0f, 3.6f, 0f), 5.2f, 0.4f, violet, parent);
+
+        Cube("Tall Climb Wall", new Vector3(0f, 9.4f, 82.2f), new Vector3(16f, 7.2f, 0.65f), climb, parent, true, 0f);
+        AddAlternatingLedges("Tall Wall", 81.75f, 6.7f, 8, 2.05f, 0.76f, 3.1f, beamMaterial, parent);
+        Cube("Tall Wall Top Lip", new Vector3(0f, 13.15f, 82.7f), new Vector3(16.5f, 0.35f, 1.25f), beamMaterial, parent, true, 0f);
+
+        Cube("Chimney Left Wall Mega", new Vector3(-3.35f, 9.1f, 94.5f), new Vector3(0.55f, 5.8f, 12f), climb, parent, true, 0f);
+        Cube("Chimney Right Wall Mega", new Vector3(3.35f, 9.1f, 94.5f), new Vector3(0.55f, 5.8f, 12f), climb, parent, true, 0f);
+        Cube("Chimney Back Stop", new Vector3(0f, 8.7f, 100.4f), new Vector3(7.2f, 5f, 0.55f), climb, parent, true, 0f);
+        AddChimneyHandholdsAt(parent, beamMaterial, 91.2f, 7.55f);
+
+        GameObject spinner = Cube("High Turnstile Beam", new Vector3(0f, 11.9f, 114.5f), new Vector3(13f, 0.35f, 0.35f), beamMaterial, parent, true, 4.1f);
+        HingeJoint spinnerHinge = spinner.AddComponent<HingeJoint>();
+        spinnerHinge.axis = Vector3.up;
+        spinner.GetComponent<Rigidbody>().angularDamping = 0.3f;
+        Cube("High Turnstile Post", new Vector3(0f, 11.45f, 114.5f), new Vector3(0.55f, 1.3f, 0.55f), edge, parent, true, 0f);
+
+        Cube("Side Traverse Wall Mega", new Vector3(8.65f, 14.15f, 126f), new Vector3(0.65f, 5.2f, 21f), climb, parent, true, 0f);
+        AddSideTraverseHoldsAt(parent, beamMaterial, 117.5f, 12.8f);
+        Cube("Glass Balance Bridge Mega", new Vector3(0f, 12.2f, 128f), new Vector3(2.1f, 0.25f, 15f), glass, parent, true, 0f);
+        Cube("Final Tower Wall", new Vector3(0f, 18.8f, 137.4f), new Vector3(15f, 6.2f, 0.65f), climb, parent, true, 0f);
+        AddAlternatingLedges("Final Tower", 136.9f, 15.9f, 6, 2.15f, 0.7f, 2.6f, beamMaterial, parent);
+
+        GameObject finalGate = Cube("Final Heavy Gate", new Vector3(0f, 18.8f, 151.5f), new Vector3(7.5f, 4.2f, 0.55f), danger, parent, true, 0f);
+        GameObject finalPlate = Cube("Final Pressure Plate", new Vector3(5.5f, 16.82f, 143f), new Vector3(2.5f, 0.18f, 2.5f), plateMaterial, parent, false, 0f);
+        ConfigurePressurePlate(finalPlate, finalGate, finalGate.transform.position + Vector3.up * 5f, 1.4f);
+        Cube("Final Crate", new Vector3(-4.5f, 17.05f, 143f), new Vector3(1.2f, 1.2f, 1.2f), crate, parent, true, 1.7f);
+
+        GameObject goalZone = Cube("Mega Goal Trigger", new Vector3(0f, 17.6f, 158f), new Vector3(4.2f, 2.8f, 4.2f), goal, parent, false, 0f);
+        BoxCollider goalCollider = goalZone.GetComponent<BoxCollider>();
+        goalCollider.isTrigger = true;
+        goalZone.AddComponent<GoalZone>();
+
+        AddSign("Prefab Player Character spawns here at Play.", new Vector3(-7f, 1.25f, -6f), parent);
+        AddSign("Use crates and balls to open the first gate.", new Vector3(-5.5f, 1.35f, 17.2f), parent);
+        AddSign("Ride moving platforms, then climb the teal wall.", new Vector3(-6.5f, 4.2f, 58f), parent);
+        AddSign("The chimney and side traverse test two-hand grabbing.", new Vector3(-6.8f, 9.7f, 94f), parent);
+        AddSign("Bring the final crate to open the last gate.", new Vector3(-4.2f, 17.5f, 146.5f), parent);
     }
 
     private static void BuildClimbGauntletLevel(Transform parent, Material floor, Material edge, Material crate, Material plateMaterial, Material goal, Material danger, Material beamMaterial, Material glass, Material climb, Material violet)
@@ -266,6 +339,17 @@ public static class PhysicsDreamSceneBuilder
         }
     }
 
+    private static void AddChimneyHandholdsAt(Transform parent, Material material, float startZ, float startY)
+    {
+        for (int i = 0; i < 7; i++)
+        {
+            float z = startZ + i * 1.45f;
+            float y = startY + i * 0.72f;
+            Cube("Mega Left Chimney Hold " + (i + 1), new Vector3(-2.85f, y, z), new Vector3(0.9f, 0.24f, 0.82f), material, parent, true, 0f);
+            Cube("Mega Right Chimney Hold " + (i + 1), new Vector3(2.85f, y + 0.34f, z + 0.55f), new Vector3(0.9f, 0.24f, 0.82f), material, parent, true, 0f);
+        }
+    }
+
     private static void AddSideTraverseHolds(Transform parent, Material material)
     {
         for (int i = 0; i < 8; i++)
@@ -273,6 +357,16 @@ public static class PhysicsDreamSceneBuilder
             float z = 46.2f + i * 2.05f;
             float y = 10.25f + (i % 3) * 0.48f;
             Cube("Side Traverse Hold " + (i + 1), new Vector3(6.02f, y, z), new Vector3(0.95f, 0.24f, 1.05f), material, parent, true, 0f);
+        }
+    }
+
+    private static void AddSideTraverseHoldsAt(Transform parent, Material material, float startZ, float startY)
+    {
+        for (int i = 0; i < 10; i++)
+        {
+            float z = startZ + i * 2.05f;
+            float y = startY + (i % 4) * 0.42f;
+            Cube("Mega Side Traverse Hold " + (i + 1), new Vector3(8.15f, y, z), new Vector3(1.05f, 0.25f, 1.1f), material, parent, true, 0f);
         }
     }
 
@@ -335,6 +429,28 @@ public static class PhysicsDreamSceneBuilder
         respawn.minY = -18f;
 
         return controller;
+    }
+
+    private static void CreateSampleSceneSpawner(Camera camera, Material handMaterial)
+    {
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+        if (prefab == null)
+        {
+            Debug.LogWarning("Player prefab not found at " + PlayerPrefabPath);
+        }
+
+        GameObject spawnPoint = new GameObject("Player Spawn Point");
+        spawnPoint.transform.position = new Vector3(0f, 2.35f, -6.5f);
+        spawnPoint.transform.rotation = Quaternion.identity;
+
+        GameObject spawnerObject = new GameObject("Sample Scene Player Spawner");
+        spawnerObject.transform.position = spawnPoint.transform.position;
+        SampleScenePlayerSpawner spawner = spawnerObject.AddComponent<SampleScenePlayerSpawner>();
+        spawner.playerPrefab = prefab;
+        spawner.spawnPoint = spawnPoint.transform;
+        spawner.sceneCamera = camera;
+        spawner.handMaterial = handMaterial;
+        spawner.respawnMinY = -42f;
     }
 
     private static WobbleHand CreateHand(string name, Rigidbody playerBody, Vector3 shoulderLocal, float side, Material material)
@@ -446,6 +562,20 @@ public static class PhysicsDreamSceneBuilder
         return gameObject;
     }
 
+    private static GameObject CreateMovingPlatform(string name, Vector3 position, Vector3 scale, Vector3 localOffset, float period, float phase, Material material, Transform parent)
+    {
+        GameObject platform = Cube(name, position, scale, material, parent, true, 1f);
+        Rigidbody rb = platform.GetComponent<Rigidbody>();
+        rb.isKinematic = true;
+        rb.interpolation = RigidbodyInterpolation.Interpolate;
+
+        OscillatingPlatform mover = platform.AddComponent<OscillatingPlatform>();
+        mover.localOffset = localOffset;
+        mover.period = period;
+        mover.phase = phase;
+        return platform;
+    }
+
     private static void ApplyMapLayer(GameObject gameObject)
     {
         int mapLayer = LayerMask.NameToLayer(MapLayerName);
@@ -472,7 +602,7 @@ public static class PhysicsDreamSceneBuilder
 
     private static Material MaterialAsset(string name, Color color, float smoothness)
     {
-        string path = "Assets/Materials/" + name + ".mat";
+        string path = MaterialsFolder + "/" + name + ".mat";
         Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
 
         if (material == null)

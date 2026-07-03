@@ -33,6 +33,16 @@ public sealed class WobbleHand : MonoBehaviour
         get { return gripJoint != null; }
     }
 
+    public Rigidbody GrabbedRigidbody
+    {
+        get { return gripJoint != null ? gripJoint.connectedBody : null; }
+    }
+
+    public bool HasStaticGrip
+    {
+        get { return gripJoint != null && gripJoint.connectedBody == null; }
+    }
+
     public bool GrabHeld
     {
         get { return grabHeld; }
@@ -108,6 +118,11 @@ public sealed class WobbleHand : MonoBehaviour
         }
 
         UpdateMapCollisionState();
+    }
+
+    public void ForceReleaseGrip()
+    {
+        ReleaseGrip();
     }
 
     public void ResetHand(Vector3 worldPosition)
