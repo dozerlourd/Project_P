@@ -9,10 +9,12 @@ public sealed class WobbleHand : MonoBehaviour
     public float reach = 2.35f;
     public float followSpring = 132f;
     public float followDamping = 13f;
-    public float grabbedSpring = 92f;
-    public float grabbedDamping = 10f;
     public float gripBreakForce = 1800f;
     public float surfaceGripPadding = 0.025f;
+    public bool allowPassiveArmRetraction;
+    public float passiveRetractionSpeed = 0.15f;
+    public float activeRetractionSpeed = 1.8f;
+    public float minGrabbedArmLength = 0.9f;
     public bool allowStaticWorldGrip = true;
     public string mapLayerName = "WobbleMap";
     public string noMapCollisionLayerName = "WobbleHandNoMap";
@@ -23,6 +25,7 @@ public sealed class WobbleHand : MonoBehaviour
     private FixedJoint gripJoint;
     private Vector3 targetPosition;
     private bool grabHeld;
+    private bool retractionHeld;
     private bool mapCollisionInputEnabled;
     private float mapCollisionDisabledUntil;
     private int activeLayer;
@@ -105,7 +108,13 @@ public sealed class WobbleHand : MonoBehaviour
 
     public void SetTarget(Vector3 worldPosition)
     {
+        worldPosition = LimitGrabbedRetraction(worldPosition);
         targetPosition = worldPosition;
+    }
+
+    public void SetRetractionHeld(bool held)
+    {
+        retractionHeld = held;
     }
 
     public void SetGrabHeld(bool held)
@@ -114,6 +123,7 @@ public sealed class WobbleHand : MonoBehaviour
         mapCollisionInputEnabled = held;
         if (!grabHeld)
         {
+            retractionHeld = false;
             ReleaseGrip();
         }
 
@@ -128,6 +138,7 @@ public sealed class WobbleHand : MonoBehaviour
     public void ResetHand(Vector3 worldPosition)
     {
         grabHeld = false;
+        retractionHeld = false;
         mapCollisionInputEnabled = false;
         ReleaseGrip();
 
@@ -151,10 +162,13 @@ public sealed class WobbleHand : MonoBehaviour
     {
         UpdateMapCollisionState();
 
-        float spring = IsGrabbed ? grabbedSpring : followSpring;
-        float damping = IsGrabbed ? grabbedDamping : followDamping;
+        if (IsGrabbed)
+        {
+            return;
+        }
+
         Vector3 toTarget = targetPosition - handBody.position;
-        Vector3 acceleration = toTarget * spring - handBody.linearVelocity * damping;
+        Vector3 acceleration = toTarget * followSpring - handBody.linearVelocity * followDamping;
         handBody.AddForce(acceleration, ForceMode.Acceleration);
     }
 
@@ -289,6 +303,50 @@ public sealed class WobbleHand : MonoBehaviour
 
         Vector3 extents = handCollider.bounds.extents;
         return Mathf.Max(0.02f, Mathf.Min(extents.x, extents.y, extents.z) + surfaceGripPadding);
+    }
+
+    private Vector3 LimitGrabbedRetraction(Vector3 requestedTarget)
+    {
+        if (!IsGrabbed || playerBody == null)
+        {
+            return requestedTarget;
+        }
+
+        Vector3 shoulder = playerBody.transform.TransformPoint(shoulderLocal);
+        Vector3 currentOffset = targetPosition - shoulder;
+        Vector3 requestedOffset = requestedTarget - shoulder;
+        float currentLength = currentOffset.magnitude;
+        float requestedLength = requestedOffset.magnitude;
+
+        if (requestedLength < 0.001f)
+        {
+            return requestedTarget;
+        }
+
+        float allowedLength = currentLength;
+        if (requestedLength < currentLength)
+        {
+            float retractSpeed = retractionHeld
+                ? activeRetractionSpeed
+                : (allowPassiveArmRetraction ? passiveRetractionSpeed : 0f);
+
+            allowedLength = Mathf.Max(
+                minGrabbedArmLength,
+                currentLength - Mathf.Max(0f, retractSpeed) * Time.deltaTime);
+
+            allowedLength = Mathf.Max(allowedLength, requestedLength);
+        }
+        else
+        {
+            allowedLength = requestedLength;
+        }
+
+        if (allowedLength <= requestedLength + 0.0001f)
+        {
+            return requestedTarget;
+        }
+
+        return shoulder + requestedOffset.normalized * allowedLength;
     }
 
     private void ReleaseGrip()

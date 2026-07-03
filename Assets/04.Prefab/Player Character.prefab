@@ -156,13 +156,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::WobbleHand
   playerBody: {fileID: 1022510057154100679}
   shoulderLocal: {x: -0.42, y: 0.58, z: 0.08}
-  reach: 2.35
+  reach: 3
   followSpring: 132
   followDamping: 13
-  grabbedSpring: 92
-  grabbedDamping: 10
   gripBreakForce: 1800
   surfaceGripPadding: 0.025
+  allowPassiveArmRetraction: 0
+  passiveRetractionSpeed: 0
+  activeRetractionSpeed: 1.8
+  minGrabbedArmLength: 0
   allowStaticWorldGrip: 1
   mapLayerName: WobbleMap
   noMapCollisionLayerName: WobbleHandNoMap
@@ -673,13 +675,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::WobbleHand
   playerBody: {fileID: 1022510057154100679}
   shoulderLocal: {x: 0.42, y: 0.58, z: 0.08}
-  reach: 2.35
+  reach: 3
   followSpring: 132
   followDamping: 13
-  grabbedSpring: 92
-  grabbedDamping: 10
   gripBreakForce: 1800
   surfaceGripPadding: 0.025
+  allowPassiveArmRetraction: 0
+  passiveRetractionSpeed: 0
+  activeRetractionSpeed: 1.8
+  minGrabbedArmLength: 0
   allowStaticWorldGrip: 1
   mapLayerName: WobbleMap
   noMapCollisionLayerName: WobbleHandNoMap
@@ -1074,7 +1078,7 @@ Rigidbody:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6029910190743774363}
   serializedVersion: 5
-  m_Mass: 7
+  m_Mass: 10
   m_LinearDamping: 0.18
   m_AngularDamping: 4.8
   m_CenterOfMass: {x: 0, y: 0, z: 0}
@@ -1115,34 +1119,43 @@ MonoBehaviour:
   moveForce: 38
   airControl: 0.45
   maxPlanarSpeed: 5.8
-  jumpVelocity: 5.4
+  jumpVelocity: 8
   uprightSpring: 42
-  uprightDamping: 7
+  uprightDamping: 1.59
   turnSpeed: 7
   cameraDistance: 6.2
   cameraHeight: 1.05
   mouseSensitivity: 0.12
-  handReach: 2.35
-  hangSwingPumpForce: 18
+  handReach: 3
+  handPullForce: 36
   hangSwingStartForceScale: 0.15
   hangSwingInputBuildRate: 0.8
   hangSwingOpposeBrake: 12
-  pendulumGravityScale: 1.15
+  pendulumStarterForce: 2.5
+  pendulumPumpForce: 16
+  pendulumPumpAlignmentThreshold: 0.25
+  pendulumMaxPumpAngleScale: 0.85
+  pendulumGravityScale: 1
   pendulumMinInputAngle: 5
   pendulumFullInputAngle: 22
+  pendulumRopeLength: 1.82
+  pendulumRopeSlack: 0.12
+  pendulumRopeCorrection: 32
+  pendulumRopeDamping: 7
+  pendulumRadialVelocityDamping: 0.85
   hangSwingEnergyGain: 1.45
   hangSwingPhysicalEnergyGain: 0.32
   hangSwingMinPhysicalSpeed: 0.35
-  hangSwingEnergyDecay: 0.65
-  hangSwingMaxEnergy: 1.8
+  hangSwingEnergyDecay: 0.49
+  hangSwingMaxEnergy: 2.54
   hangMaxUpwardSpeed: 3.2
-  maxGripDuration: 4
-  autoReleaseTension: 16
-  autoReleaseTangentSpeed: 8.5
+  maxGripDuration: 15
+  autoReleaseTension: 60
+  autoReleaseTangentSpeed: 50
   preserveReleaseVelocity: 1
-  releaseImpulse: 2.5
-  maxReleaseImpulse: 6
-  minLaunchSpeedForImpulse: 2
+  releaseImpulse: 5.27
+  maxReleaseImpulse: 10.54
+  minLaunchSpeedForImpulse: 3.76
   groundProbeRadius: 0.28
   groundProbeDistance: 1.15
   groundNormalMinY: 0.62

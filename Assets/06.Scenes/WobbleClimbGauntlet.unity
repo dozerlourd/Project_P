@@ -4132,6 +4132,18 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 723198838891453996, guid: 1910d52cf9c504245b190f4bd931206e, type: 3}
+      propertyPath: maxGripDuration
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 723198838891453996, guid: 1910d52cf9c504245b190f4bd931206e, type: 3}
+      propertyPath: autoReleaseTension
+      value: 40
+      objectReference: {fileID: 0}
+    - target: {fileID: 723198838891453996, guid: 1910d52cf9c504245b190f4bd931206e, type: 3}
+      propertyPath: autoReleaseTangentSpeed
+      value: 30
+      objectReference: {fileID: 0}
     - target: {fileID: 4508803942466424179, guid: 1910d52cf9c504245b190f4bd931206e, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
