@@ -6,7 +6,6 @@ public sealed class WobbleHand : MonoBehaviour
 {
     public Rigidbody playerBody;
     public Vector3 shoulderLocal;
-    public float reach = 2.35f;
     public float followSpring = 132f;
     public float followDamping = 13f;
     public float gripBreakForce = 1800f;
@@ -15,6 +14,7 @@ public sealed class WobbleHand : MonoBehaviour
     public float passiveRetractionSpeed = 0.15f;
     public float activeRetractionSpeed = 1.8f;
     public float minGrabbedArmLength = 0.9f;
+    public float maxGrabbedArmLength = 2.55f;
     public bool allowStaticWorldGrip = true;
     public string mapLayerName = "WobbleMap";
     public string noMapCollisionLayerName = "WobbleHandNoMap";
@@ -30,6 +30,8 @@ public sealed class WobbleHand : MonoBehaviour
     private float mapCollisionDisabledUntil;
     private int activeLayer;
     private int noMapCollisionLayer = -1;
+    private Vector3 customGravity = new Vector3(0f, -9.81f, 0f);
+    private float configuredReach = 2.35f;
 
     public bool IsGrabbed
     {
@@ -55,6 +57,7 @@ public sealed class WobbleHand : MonoBehaviour
     {
         handBody = GetComponent<Rigidbody>();
         handCollider = GetComponent<Collider>();
+        handBody.useGravity = false;
         targetPosition = transform.position;
         activeLayer = gameObject.layer;
         noMapCollisionLayer = LayerMask.NameToLayer(noMapCollisionLayerName);
@@ -66,7 +69,7 @@ public sealed class WobbleHand : MonoBehaviour
     {
         playerBody = connectedBody;
         shoulderLocal = connectedShoulderLocal;
-        reach = maxReach;
+        configuredReach = maxReach;
 
         if (armJoint == null)
         {
@@ -89,13 +92,22 @@ public sealed class WobbleHand : MonoBehaviour
         armJoint.projectionDistance = 0.15f;
 
         SoftJointLimit limit = armJoint.linearLimit;
-        limit.limit = reach;
+        limit.limit = configuredReach;
         armJoint.linearLimit = limit;
 
         SoftJointLimitSpring spring = armJoint.linearLimitSpring;
         spring.spring = 120f;
         spring.damper = 12f;
         armJoint.linearLimitSpring = spring;
+    }
+
+    public void SetCustomGravity(Vector3 gravity)
+    {
+        customGravity = gravity;
+        if (handBody != null)
+        {
+            handBody.useGravity = false;
+        }
     }
 
     public void IgnoreCollision(Collider other)
@@ -127,6 +139,7 @@ public sealed class WobbleHand : MonoBehaviour
             ReleaseGrip();
         }
 
+        UpdateArmReachLimit();
         UpdateMapCollisionState();
     }
 
@@ -161,6 +174,8 @@ public sealed class WobbleHand : MonoBehaviour
     private void FixedUpdate()
     {
         UpdateMapCollisionState();
+        handBody.useGravity = false;
+        handBody.AddForce(customGravity, ForceMode.Acceleration);
 
         if (IsGrabbed)
         {
@@ -230,6 +245,7 @@ public sealed class WobbleHand : MonoBehaviour
         gripJoint.enableCollision = false;
         gripJoint.connectedMassScale = 1f;
         gripJoint.massScale = 0.4f;
+        UpdateArmReachLimit();
     }
 
     private Vector3 ResolveSpawnOverlap(Vector3 position)
@@ -317,6 +333,7 @@ public sealed class WobbleHand : MonoBehaviour
         Vector3 requestedOffset = requestedTarget - shoulder;
         float currentLength = currentOffset.magnitude;
         float requestedLength = requestedOffset.magnitude;
+        float maxLength = EffectiveMaxGrabbedArmLength();
 
         if (requestedLength < 0.001f)
         {
@@ -341,12 +358,32 @@ public sealed class WobbleHand : MonoBehaviour
             allowedLength = requestedLength;
         }
 
-        if (allowedLength <= requestedLength + 0.0001f)
+        allowedLength = Mathf.Clamp(allowedLength, minGrabbedArmLength, maxLength);
+
+        if (Mathf.Abs(allowedLength - requestedLength) <= 0.0001f)
         {
             return requestedTarget;
         }
 
         return shoulder + requestedOffset.normalized * allowedLength;
+    }
+
+    private float EffectiveMaxGrabbedArmLength()
+    {
+        float maxLength = maxGrabbedArmLength > 0f ? maxGrabbedArmLength : configuredReach;
+        return Mathf.Max(minGrabbedArmLength, maxLength);
+    }
+
+    private void UpdateArmReachLimit()
+    {
+        if (armJoint == null)
+        {
+            return;
+        }
+
+        SoftJointLimit limit = armJoint.linearLimit;
+        limit.limit = IsGrabbed ? EffectiveMaxGrabbedArmLength() : configuredReach;
+        armJoint.linearLimit = limit;
     }
 
     private void ReleaseGrip()
@@ -358,6 +395,7 @@ public sealed class WobbleHand : MonoBehaviour
 
         Destroy(gripJoint);
         gripJoint = null;
+        UpdateArmReachLimit();
     }
 
     private bool IsMapCollisionEnabled()

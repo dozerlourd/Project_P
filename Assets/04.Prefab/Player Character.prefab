@@ -1152,10 +1152,8 @@ MonoBehaviour:
   maxGripDuration: 15
   autoReleaseTension: 60
   autoReleaseTangentSpeed: 50
-  preserveReleaseVelocity: 1
-  releaseImpulse: 5.27
-  maxReleaseImpulse: 10.54
-  minLaunchSpeedForImpulse: 3.76
+  hangJumpVelocity: 5.4
+  hangJumpMomentumImpulse: 2.5
   groundProbeRadius: 0.28
   groundProbeDistance: 1.15
   groundNormalMinY: 0.62
