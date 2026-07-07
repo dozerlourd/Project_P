@@ -21,6 +21,11 @@ public sealed class WobblePlayerController : MonoBehaviour
     public float moveLeanResponsiveness = 8f;
     public float moveLeanStability = 18f;
     public float moveLeanAngularDamping = 10f;
+    public float groundMaxTiltAngle = 8f;
+    public float groundTiltLimitStability = 85f;
+    public float groundTiltLimitDamping = 16f;
+    public float groundTurnStability = 32f;
+    public float groundTurnDamping = 8f;
     public float airControl = 0.45f;
     public float maxPlanarSpeed = 5.8f;
     public float jumpVelocity = 5.4f;
@@ -29,10 +34,18 @@ public sealed class WobblePlayerController : MonoBehaviour
     public float turnSpeed = 7f;
     public float cameraDistance = 6.2f;
     public float cameraHeight = 1.05f;
+    public float cameraFollowSpeed = 16f;
+    public float cameraFollowCurveDistance = 2.5f;
+    public float cameraMinFollowFactor = 0.08f;
+    public AnimationCurve cameraFollowCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
     public float mouseSensitivity = 0.12f;
     public float handReach = 2.55f;
     public float handPullForce = 36f;
     public Vector3 customGravity = new Vector3(0f, -9.81f, 0f);
+
+    [Header("Visuals")]
+    public bool showFrontDirectionMarker = true;
+    public Color frontDirectionColor = new Color(0.1f, 0.9f, 1f, 1f);
 
     [Header("Hands")]
     public float handWindupDuration = 0.1f;
@@ -104,6 +117,7 @@ public sealed class WobblePlayerController : MonoBehaviour
     private bool hangJumpUsed;
     private Vector3 targetMoveLeanDirection;
     private Vector3 currentMoveLeanDirection;
+    private Transform frontDirectionMarker;
 
     private void Awake()
     {
@@ -139,6 +153,7 @@ public sealed class WobblePlayerController : MonoBehaviour
             rightHand.SetCustomGravity(customGravity);
         }
 
+        EnsureFrontDirectionMarker();
         IgnoreSelfCollisions(leftHand);
         IgnoreSelfCollisions(rightHand);
         ApplyMapLayerToSceneObjects();
@@ -216,7 +231,7 @@ public sealed class WobblePlayerController : MonoBehaviour
         ApplyHangSwing(grounded, hasGrip, hasStaticGrip);
         ApplyHandPull();
         ApplyGripAutoRelease();
-        ApplyUprightTorque();
+        ApplyUprightTorque(grounded, hasGrip);
         UpdateHandTargets();
 
         jumpQueued = false;
@@ -329,7 +344,7 @@ public sealed class WobblePlayerController : MonoBehaviour
             body.AddForce(desired * (moveForce * control), ForceMode.Acceleration);
         }
 
-        if (desired.sqrMagnitude > 0.02f)
+        if ((!grounded || hasGrip) && desired.sqrMagnitude > 0.02f)
         {
             Quaternion targetRotation = Quaternion.LookRotation(desired.normalized, Vector3.up);
             body.MoveRotation(Quaternion.Slerp(body.rotation, targetRotation, turnSpeed * Time.fixedDeltaTime));
@@ -889,7 +904,7 @@ public sealed class WobblePlayerController : MonoBehaviour
         return IsActiveGrip(hand, grabInputHeld) && hand.HasStaticGrip;
     }
 
-    private void ApplyUprightTorque()
+    private void ApplyUprightTorque(bool grounded, bool hasGrip)
     {
         float leanBlend = 1f - Mathf.Exp(-moveLeanResponsiveness * Time.fixedDeltaTime);
         currentMoveLeanDirection = Vector3.Lerp(currentMoveLeanDirection, targetMoveLeanDirection, leanBlend);
@@ -914,6 +929,100 @@ public sealed class WobblePlayerController : MonoBehaviour
         float damping = uprightDamping + moveLeanAngularDamping;
         Vector3 torque = axis * stability - body.angularVelocity * damping;
         body.AddTorque(torque, ForceMode.Acceleration);
+
+        if (grounded && !hasGrip)
+        {
+            ApplyGroundYawTurn();
+            ApplyGroundTiltLimit();
+        }
+    }
+
+    private void ApplyGroundYawTurn()
+    {
+        if (targetMoveLeanDirection.sqrMagnitude < 0.02f)
+        {
+            return;
+        }
+
+        Vector3 currentForward = Vector3.ProjectOnPlane(transform.forward, Vector3.up);
+        if (currentForward.sqrMagnitude < 0.0001f)
+        {
+            return;
+        }
+
+        float signedAngle = Vector3.SignedAngle(currentForward.normalized, targetMoveLeanDirection.normalized, Vector3.up);
+        float yawError = signedAngle * Mathf.Deg2Rad;
+        float yawTorque = yawError * groundTurnStability - body.angularVelocity.y * groundTurnDamping;
+        body.AddTorque(Vector3.up * yawTorque, ForceMode.Acceleration);
+    }
+
+    private void ApplyGroundTiltLimit()
+    {
+        float maxTilt = Mathf.Max(0f, groundMaxTiltAngle);
+        float currentTilt = Vector3.Angle(transform.up, Vector3.up);
+        Vector3 horizontalAngularVelocity = Vector3.ProjectOnPlane(body.angularVelocity, Vector3.up);
+
+        if (currentTilt > maxTilt)
+        {
+            Vector3 uprightAxis = Vector3.Cross(transform.up, Vector3.up);
+            float excessTilt01 = Mathf.Clamp01((currentTilt - maxTilt) / Mathf.Max(1f, maxTilt));
+            Vector3 correctionTorque = uprightAxis * (groundTiltLimitStability * excessTilt01);
+            Vector3 dampingTorque = -horizontalAngularVelocity * groundTiltLimitDamping;
+            body.AddTorque(correctionTorque + dampingTorque, ForceMode.Acceleration);
+            return;
+        }
+
+        body.AddTorque(-horizontalAngularVelocity * (groundTiltLimitDamping * 0.35f), ForceMode.Acceleration);
+    }
+
+    private void EnsureFrontDirectionMarker()
+    {
+        if (!showFrontDirectionMarker)
+        {
+            if (frontDirectionMarker != null)
+            {
+                frontDirectionMarker.gameObject.SetActive(false);
+            }
+
+            return;
+        }
+
+        Transform existing = transform.Find("Front Direction Marker");
+        if (existing != null)
+        {
+            frontDirectionMarker = existing;
+            frontDirectionMarker.gameObject.SetActive(true);
+            return;
+        }
+
+        GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        marker.name = "Front Direction Marker";
+        marker.transform.SetParent(transform, false);
+        marker.transform.localPosition = new Vector3(0f, 0.18f, 0.51f);
+        marker.transform.localRotation = Quaternion.identity;
+        marker.transform.localScale = new Vector3(0.18f, 0.28f, 0.08f);
+
+        Collider markerCollider = marker.GetComponent<Collider>();
+        if (markerCollider != null)
+        {
+            Destroy(markerCollider);
+        }
+
+        Renderer markerRenderer = marker.GetComponent<Renderer>();
+        if (markerRenderer != null)
+        {
+            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null)
+            {
+                shader = Shader.Find("Standard");
+            }
+
+            Material material = new Material(shader);
+            material.color = frontDirectionColor;
+            markerRenderer.material = material;
+        }
+
+        frontDirectionMarker = marker.transform;
     }
 
     private void UpdateHandTargets()
@@ -1016,7 +1125,17 @@ public sealed class WobblePlayerController : MonoBehaviour
             }
         }
 
-        cameraTransform.SetPositionAndRotation(Vector3.Lerp(cameraTransform.position, desired, 18f * Time.deltaTime), lookRotation);
+        float followT = CameraFollowT(cameraTransform.position, desired);
+        cameraTransform.SetPositionAndRotation(Vector3.Lerp(cameraTransform.position, desired, followT), lookRotation);
+    }
+
+    private float CameraFollowT(Vector3 current, Vector3 desired)
+    {
+        float baseT = 1f - Mathf.Exp(-Mathf.Max(0.01f, cameraFollowSpeed) * Time.deltaTime);
+        float distance01 = Mathf.Clamp01(Vector3.Distance(current, desired) / Mathf.Max(0.01f, cameraFollowCurveDistance));
+        float curveT = cameraFollowCurve != null ? Mathf.Clamp01(cameraFollowCurve.Evaluate(distance01)) : distance01;
+        float distanceFactor = Mathf.Lerp(Mathf.Clamp01(cameraMinFollowFactor), 1f, curveT);
+        return Mathf.Clamp01(baseT * distanceFactor);
     }
 
     private void UpdateHead()

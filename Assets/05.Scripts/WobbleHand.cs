@@ -15,6 +15,7 @@ public sealed class WobbleHand : MonoBehaviour
     public float activeRetractionSpeed = 1.8f;
     public float minGrabbedArmLength = 0.9f;
     public float maxGrabbedArmLength = 2.55f;
+    public float regrabDelay = 0.25f;
     public bool allowStaticWorldGrip = true;
     public string mapLayerName = "WobbleMap";
     public string noMapCollisionLayerName = "WobbleHandNoMap";
@@ -28,6 +29,7 @@ public sealed class WobbleHand : MonoBehaviour
     private bool retractionHeld;
     private bool mapCollisionInputEnabled;
     private float mapCollisionDisabledUntil;
+    private float nextGripAllowedTime;
     private int activeLayer;
     private int noMapCollisionLayer = -1;
     private Vector3 customGravity = new Vector3(0f, -9.81f, 0f);
@@ -199,7 +201,7 @@ public sealed class WobbleHand : MonoBehaviour
 
     private void TryGrip(Collision collision)
     {
-        if (!grabHeld || !IsMapCollisionEnabled() || gripJoint != null || collision.collider == null || collision.collider.isTrigger || collision.contactCount == 0)
+        if (!grabHeld || Time.time < nextGripAllowedTime || !IsMapCollisionEnabled() || gripJoint != null || collision.collider == null || collision.collider.isTrigger || collision.contactCount == 0)
         {
             return;
         }
@@ -395,6 +397,7 @@ public sealed class WobbleHand : MonoBehaviour
 
         Destroy(gripJoint);
         gripJoint = null;
+        nextGripAllowedTime = Time.time + Mathf.Max(0f, regrabDelay);
         UpdateArmReachLimit();
     }
 
