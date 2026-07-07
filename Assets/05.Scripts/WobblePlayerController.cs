@@ -19,19 +19,18 @@ public sealed class WobblePlayerController : MonoBehaviour
     public float moveForce = 38f;
     public float moveLeanAngle = 5f;
     public float moveLeanResponsiveness = 8f;
-    public float moveLeanStability = 18f;
-    public float moveLeanAngularDamping = 10f;
     public float groundMaxTiltAngle = 8f;
     public float groundTiltLimitStability = 85f;
     public float groundTiltLimitDamping = 16f;
     public float groundTurnStability = 32f;
     public float groundTurnDamping = 8f;
+    public float groundLateralVelocityDamping = 10f;
     public float airControl = 0.45f;
     public float maxPlanarSpeed = 5.8f;
     public float jumpVelocity = 5.4f;
-    public float uprightSpring = 42f;
-    public float uprightDamping = 7f;
-    public float turnSpeed = 7f;
+    public float uprightSpring = 60f;
+    public float uprightDamping = 17f;
+    public float airTurnSpeed = 7f;
     public float cameraDistance = 6.2f;
     public float cameraHeight = 1.05f;
     public float cameraFollowSpeed = 16f;
@@ -89,6 +88,8 @@ public sealed class WobblePlayerController : MonoBehaviour
     public float groundProbeDistance = 1.15f;
     public float groundNormalMinY = 0.62f;
     public float groundMaxCenterOffset = 0.48f;
+    public float groundTiltSupportAngle = 35f;
+    public float groundTiltedMaxCenterOffset = 0.9f;
     public float groundMinCenterHeight = 0.55f;
     public float centralGroundProbeRadius = 0.12f;
     public float wallSlideProbeRadius = 0.42f;
@@ -338,6 +339,11 @@ public sealed class WobblePlayerController : MonoBehaviour
         targetMoveLeanDirection = desired.sqrMagnitude > 0.02f ? desired.normalized : Vector3.zero;
 
         Vector3 horizontalVelocity = Vector3.ProjectOnPlane(body.linearVelocity, Vector3.up);
+        if (grounded && !hasGrip && desired.sqrMagnitude > 0.001f)
+        {
+            ApplyGroundLateralVelocityDamping(desired.normalized, horizontalVelocity);
+        }
+
         if (desired.sqrMagnitude > 0.001f && horizontalVelocity.magnitude < maxPlanarSpeed)
         {
             float control = grounded ? 1f : airControl;
@@ -347,7 +353,7 @@ public sealed class WobblePlayerController : MonoBehaviour
         if ((!grounded || hasGrip) && desired.sqrMagnitude > 0.02f)
         {
             Quaternion targetRotation = Quaternion.LookRotation(desired.normalized, Vector3.up);
-            body.MoveRotation(Quaternion.Slerp(body.rotation, targetRotation, turnSpeed * Time.fixedDeltaTime));
+            body.MoveRotation(Quaternion.Slerp(body.rotation, targetRotation, airTurnSpeed * Time.fixedDeltaTime));
         }
 
         if (jumpQueued && grounded)
@@ -361,6 +367,17 @@ public sealed class WobblePlayerController : MonoBehaviour
 
             body.AddForce(Vector3.up * jumpVelocity, ForceMode.VelocityChange);
         }
+    }
+
+    private void ApplyGroundLateralVelocityDamping(Vector3 desiredDirection, Vector3 horizontalVelocity)
+    {
+        Vector3 lateralVelocity = Vector3.ProjectOnPlane(horizontalVelocity, desiredDirection);
+        if (lateralVelocity.sqrMagnitude < 0.0001f)
+        {
+            return;
+        }
+
+        body.AddForce(-lateralVelocity * groundLateralVelocityDamping, ForceMode.Acceleration);
     }
 
     private void ApplyHangJump(bool grounded, bool hasGrip)
@@ -925,9 +942,7 @@ public sealed class WobblePlayerController : MonoBehaviour
         }
 
         Vector3 axis = Vector3.Cross(transform.up, desiredUp);
-        float stability = uprightSpring + moveLeanStability;
-        float damping = uprightDamping + moveLeanAngularDamping;
-        Vector3 torque = axis * stability - body.angularVelocity * damping;
+        Vector3 torque = axis * uprightSpring - body.angularVelocity * uprightDamping;
         body.AddTorque(torque, ForceMode.Acceleration);
 
         if (grounded && !hasGrip)
@@ -1168,7 +1183,7 @@ public sealed class WobblePlayerController : MonoBehaviour
             }
 
             Vector3 centerToHit = Vector3.ProjectOnPlane(hit.point - body.position, Vector3.up);
-            if (centerToHit.magnitude > groundMaxCenterOffset)
+            if (centerToHit.magnitude > GroundCenterOffsetLimit())
             {
                 continue;
             }
@@ -1177,6 +1192,15 @@ public sealed class WobblePlayerController : MonoBehaviour
         }
 
         return false;
+    }
+
+    private float GroundCenterOffsetLimit()
+    {
+        float supportAngle = Mathf.Max(0.001f, groundTiltSupportAngle);
+        float tilt = Vector3.Angle(transform.up, Vector3.up);
+        float tilt01 = Mathf.InverseLerp(0f, supportAngle, tilt);
+        float maxOffset = Mathf.Max(groundMaxCenterOffset, groundTiltedMaxCenterOffset);
+        return Mathf.Lerp(groundMaxCenterOffset, maxOffset, tilt01);
     }
 
     private bool IsValidGroundHit(RaycastHit hit)

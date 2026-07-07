@@ -1121,8 +1121,6 @@ MonoBehaviour:
   moveForce: 38
   moveLeanAngle: 5
   moveLeanResponsiveness: 8
-  moveLeanStability: 18
-  moveLeanAngularDamping: 10
   groundMaxTiltAngle: 8
   groundTiltLimitStability: 85
   groundTiltLimitDamping: 16
@@ -1131,9 +1129,9 @@ MonoBehaviour:
   airControl: 0.1
   maxPlanarSpeed: 8
   jumpVelocity: 12
-  uprightSpring: 100
-  uprightDamping: 1
-  turnSpeed: 12
+  uprightSpring: 118
+  uprightDamping: 11
+  airTurnSpeed: 12
   cameraDistance: 6.2
   cameraHeight: 1.05
   cameraFollowSpeed: 16
@@ -1202,6 +1200,8 @@ MonoBehaviour:
   groundProbeDistance: 1.15
   groundNormalMinY: 0.62
   groundMaxCenterOffset: 0.48
+  groundTiltSupportAngle: 35
+  groundTiltedMaxCenterOffset: 0.9
   groundMinCenterHeight: 0.55
   centralGroundProbeRadius: 0.12
   wallSlideProbeRadius: 0.42
